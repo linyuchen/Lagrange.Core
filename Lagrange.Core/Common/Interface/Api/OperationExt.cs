@@ -1,4 +1,6 @@
 using Lagrange.Core.Common.Entity;
+using Lagrange.Core.Internal.Event.System;
+using Lagrange.Core.Internal.Service.System;
 using Lagrange.Core.Message;
 using Lagrange.Core.Message.Entity;
 
@@ -172,5 +174,13 @@ public static class OperationExt
     
     public static Task<bool> FriendPoke(this BotContext bot, uint friendUin)
         => bot.ContextCollection.Business.OperationLogic.FriendPoke(friendUin);
+
+    public static async Task<List<string>> FetchRkey(this BotContext bot)
+    {
+        var fetchRkeyEvent = FetchRKeyEvent.Create();
+        var events = await bot.ContextCollection.Business.SendEvent(fetchRkeyEvent);
+        return ((FetchRKeyEvent)events[0]).RKeys;
+    }
+    
 
 }
