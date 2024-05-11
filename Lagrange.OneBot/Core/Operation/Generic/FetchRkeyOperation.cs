@@ -11,10 +11,6 @@ public class FetchRkeyOperation : IOperation
     public async Task<OneBotResult> HandleOperation(BotContext context, JsonNode? payload)
     {
         var rkeys = await context.FetchRkey();
-        if (rkeys == null)
-        {
-            throw new ArgumentNullException(nameof(rkeys));
-        }
         return new OneBotResult(new JsonObject { { "private_rkey", rkeys[0] }, { "group_rkey", rkeys[1] } }, 0, "ok");
     }
 }
