@@ -7,7 +7,7 @@
 ![C#](https://img.shields.io/badge/OneBot-%20.NET_7-blue)
 
 [![License](https://img.shields.io/static/v1?label=LICENSE&message=GPL-3.0&color=lightrey)](/LICENSE)
-[![Telegram](https://img.shields.io/endpoint?url=https%3A%2F%2Ftelegram-badge-4mbpu8e0fit4.runkit.sh%2F%3Furl%3Dhttps%3A%2F%2Ft.me%2F%2B6HNTeJO0JqtlNmRl)](https://t.me/+6HNTeJO0JqtlNmRl)
+[![Telegram](https://img.shields.io/badge/Chat-Telegram-27A7E7)](https://t.me/+6HNTeJO0JqtlNmRl)
 
 [![Image](https://trendshift.io/api/badge/repositories/3486)](https://trendshift.io/repositories/3486)
 
@@ -66,11 +66,11 @@ Please use Lagrange.Core responsibly and in accordance with the law.
 
 | 协议    | 支持情况 | 登录类型          | 支持情况 | 消息段           | 支持情况 | 操作             | 支持情况 | 事件             | 支持情况 |
 | ------- | :------: | ----------------- | :------: | :--------------- | :------: | :--------------- | :------: | :--------------- | :------: |
-| Windows |    🟢    | 扫码登录          |    🟢    | 图片             |    🟢    | ~~戳一戳~~       |    🔴    | 验证码           |    🟢    |
+| Windows |    🟢    | 扫码登录          |    🟢    | 图片             |    🟢    | 戳一戳       |    🟢    | 验证码           |    🟢    |
 | macOS   |    🟢    | 密码登录          |    🟢    | 文本 / At        |    🟢    | 撤回消息         |    🟢    | 机器人在线       |    🟢    |
 | Linux   |    🟢    | 快速登录          |    🟢    | 语音             |    🟢    | 退出群组         |    🟢    | 机器人离线       |    🟢    |
-|         |          | 异常设备<br/>密码 |    🔴    | QQ 黄脸表情      |    🟢    | ~~特殊头衔~~     |    🔴    | 消息事件         |    🟢    |
-|         |          | 异常设备<br/>快速 |    🟢    | Json             |    🟢    | 移除群成员       |    🟢    | ~~戳一戳事件~~   |    🔴    |
+|         |          | 异常设备<br/>密码 |    🔴    | QQ 黄脸表情      |    🟢    | 特殊头衔     |    🟢    | 消息事件         |    🟢    |
+|         |          | 异常设备<br/>快速 |    🟢    | Json             |    🟢    | 移除群成员       |    🟢    | 戳一戳事件   |    🟢    |
 |         |          | 新设备验证        |    🟢    | Xml              |    🟢    | 禁言群成员       |    🟢    | 消息撤回事件     |    🟢    |
 |         |          |                   |          | 合并转发         |    🟢    | 设置管理员       |    🟢    | 群成员减少       |    🟢    |
 |         |          |                   |          | 视频             |    🟢    | 处理添加好友请求 |    🟢    | 群成员增加       |    🟢    |
@@ -349,7 +349,11 @@ Please use Lagrange.Core responsibly and in accordance with the law.
 
 > [!WARNING]
 > 
-> 在 Linux 上，用于 `ForwardWebSocket` 和 `Http` 的 `Host` 必须使用与请求头中的 `Host` 相同的值，但 `*` 和 `+` 除外！这是一个上游错误。
+> 目前，`ForwardWebSocket` 和 `Http` 是基于 `HttpListener` 实现的，它存在以下问题:
+> 
+> 1. 在 Linux 中，Http 请求的 `Host` 头必须与 `Prefix` 的值相匹配，除非它是 `+` 或 `*`，因此请将 `ForwardWebSocket` 和 `Http` 的 `Host` 配置为您用来访问它的域名或 IP。
+> 
+> 2. 在 Windows 中，`HttpListener` 基于 `http.sys` 实现，因此使用前需要注册 `urlacl`，请参阅 [netsh](https://learn.microsoft.com/zh-cn/windows-server/networking/technologies/netsh/netsh-http)。您也可以使用管理员启动 `Lagrange.OneBot`，此时 `HttpListener` 会自动注册所需的 `urlacl`。
 
 ## 登录前须知
 

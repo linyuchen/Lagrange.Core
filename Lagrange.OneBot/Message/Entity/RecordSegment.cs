@@ -12,9 +12,9 @@ public partial class RecordSegment(string url)
 {
     public RecordSegment() : this("") { }
 
-    [JsonPropertyName("file")] [CQProperty] public string File { get; set; } = url;
+    [JsonPropertyName("file")][CQProperty] public string File { get; set; } = url;
 
-    [JsonPropertyName("url")] public string Url { get; set; }  = url;
+    [JsonPropertyName("url")] public string Url { get; set; } = url;
 }
 
 [SegmentSubscriber(typeof(RecordEntity), "record")]
@@ -22,13 +22,10 @@ public partial class RecordSegment : SegmentBase
 {
     public override void Build(MessageBuilder builder, SegmentBase segment)
     {
-        if (segment is RecordSegment recordSegment and not { File: "" } && CommonResolver.ResolveStream(recordSegment.File) is { } record)
+        if (segment is RecordSegment recordSegment and not { File: "" } && CommonResolver.Resolve(recordSegment.File) is { } record)
         {
-            if (ConvertFormat(record, out double time) is { } silk)
-            {
-                builder.Record(silk, (int)time);
-            }
-            else throw new Exception("Encode failed");
+            byte[] silk = ConvertFormat(record, out double time);
+            builder.Record(silk, (int)Math.Ceiling(time));
         }
     }
 
@@ -39,92 +36,63 @@ public partial class RecordSegment : SegmentBase
         return new RecordSegment(recordEntity.AudioUrl);
     }
 
-    private static byte[]? ConvertFormat(Stream audio, out double audioTime)
+    private static byte[] ConvertFormat(byte[] audio, out double audioTime)
     {
-        audioTime = .0d;
-        var head = new byte[64];
-        _ = audio.Read(head.AsSpan());
-        audio.Seek(0, SeekOrigin.Begin);
-
-        if (AudioHelper.DetectAudio(head, out var type))
+        var format = AudioHelper.DetectAudio(audio);
+        switch (format) // Process
         {
-            byte[] audioData;
-            switch (type) // Process
-            {
-                // Amr format
-                // We no need to convert it
-                case AudioHelper.AudioFormat.Amr:
+            // Silk v3 for tx use
+            case AudioHelper.AudioFormat.TenSilkV3:
                 {
-                    var ms = new MemoryStream();
-                    audio.CopyTo(ms);
-                    audioData = ms.ToArray(); 
+                    audioTime = AudioHelper.GetTenSilkTime(audio);
+                    return audio;
+                }
+
+            // Amr format
+            // We no need to convert it
+            case AudioHelper.AudioFormat.Amr:
+                {
                     audioTime = audio.Length / 1607.0;
-                    break;
+                    return audio;
                 }
 
-                // Silk v3 for tx use
-                case AudioHelper.AudioFormat.TenSilkV3:
+            // Normal silk v3
+            // We need to append a header 0x02
+            // and remove 0xFFFF end for it
+            case AudioHelper.AudioFormat.SilkV3:
                 {
-                    var ms = new MemoryStream();
-                    audio.CopyTo(ms);
-                    audioData = ms.ToArray();
-                    audioTime = AudioHelper.GetSilkTime(head, 1);
-                    break;
+                    audio = [0x02, .. audio.AsSpan(0, audio.Length - 2)];
+                    audioTime = AudioHelper.GetTenSilkTime(audio);
+                    return audio;
                 }
 
-                // Normal silk v3
-                // We need to append a header 0x02
-                // and remove 0xFFFF end for it
-                case AudioHelper.AudioFormat.SilkV3:
+            // Need to convert
+            case AudioHelper.AudioFormat.Wav:
+            case AudioHelper.AudioFormat.Ogg:
+            case AudioHelper.AudioFormat.Mp3:
                 {
-                    var raw = new byte[audio.Length - 2];
-                    _ = audio.Read(raw.AsSpan());
-                    
-                    audioData = new byte[] { 0x02 }.Concat(raw[..^2]).ToArray();
-                    audioTime = AudioHelper.GetSilkTime(head);
-                    break;
+                    var input = new MemoryStream(audio);
+                    var output = new MemoryStream();
+
+                    var pipeline = new AudioPipeline() {
+                        format switch {
+                            AudioHelper.AudioFormat.Wav => new WavCodec.Decoder(input),
+                            AudioHelper.AudioFormat.Ogg => new VorbisCodec.Decoder(input),
+                            AudioHelper.AudioFormat.Mp3 => new Mp3Codec.Decoder(input),
+                            _ => throw new Exception("Unknown Fromat")
+                        },
+                        new AudioResampler(AudioInfo.SilkV3()),
+                        new SilkV3Codec.Encoder(),
+                        output
+                    };
+                    if (!pipeline.Start().Result) throw new Exception("Encode failed");
+
+                    audioTime = pipeline.GetAudioTime();
+                    return output.ToArray();
                 }
 
-                // Cannot convert unknown type
-                case AudioHelper.AudioFormat.Unknown:
-                {
-                    return null;
-                }
-
-                // Need to convert
-                default:
-                case AudioHelper.AudioFormat.Ogg:
-                case AudioHelper.AudioFormat.Mp3:
-                case AudioHelper.AudioFormat.Wav:
-                {
-                    using var outputStream = new MemoryStream();
-                    var audioPipeline = new AudioPipeline();
-                    
-                    audioPipeline.Add(type switch
-                    {
-                        AudioHelper.AudioFormat.Mp3 => new Mp3Codec.Decoder(audio),  // Decode Mp3 to pcm
-                        AudioHelper.AudioFormat.Wav => new WavCodec.Decoder(audio), // Decode Wav to pcm
-                        AudioHelper.AudioFormat.Ogg => new VorbisCodec.Decoder(audio),
-                        _ => throw new NotImplementedException()
-                    }); // Resample audio to silkv3
-                    audioPipeline.Add(new AudioResampler(AudioInfo.SilkV3())); // Encode pcm to silkv3
-                    audioPipeline.Add(new SilkV3Codec.Encoder()); // Output stream
-                    audioPipeline.Add(outputStream);
-
-                    // Start pipeline
-                    if (!audioPipeline.Start().Result) return null;
-                    
-                    audioData = outputStream.ToArray(); // Set audio information
-                    audioTime = audioPipeline.GetAudioTime();
-                    audioPipeline.Dispose();
-
-                    break;
-                }
-            }
-
-            return audioData;
+            // Cannot convert unknown type
+            default: throw new Exception("Unknown Fromat");
         }
-
-        return null;
     }
 }

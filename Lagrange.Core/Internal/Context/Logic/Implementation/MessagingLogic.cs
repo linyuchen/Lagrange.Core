@@ -10,6 +10,7 @@ using Lagrange.Core.Internal.Service;
 using Lagrange.Core.Message;
 using Lagrange.Core.Message.Entity;
 using FriendPokeEvent = Lagrange.Core.Event.EventArg.FriendPokeEvent;
+using GroupPokeEvent = Lagrange.Core.Event.EventArg.GroupPokeEvent;
 
 namespace Lagrange.Core.Internal.Context.Logic.Implementation;
 
@@ -27,6 +28,8 @@ namespace Lagrange.Core.Internal.Context.Logic.Implementation;
 [EventSubscribe(typeof(GroupSysRecallEvent))]
 [EventSubscribe(typeof(GroupSysRequestJoinEvent))]
 [EventSubscribe(typeof(GroupSysRequestInvitationEvent))]
+[EventSubscribe(typeof(GroupSysEssenceEvent))]
+[EventSubscribe(typeof(GroupSysPokeEvent))]
 [EventSubscribe(typeof(FriendSysRecallEvent))]
 [EventSubscribe(typeof(FriendSysRequestEvent))]
 [EventSubscribe(typeof(FriendSysPokeEvent))]
@@ -114,6 +117,18 @@ internal class MessagingLogic : LogicBase
                 Collection.Invoker.PostEvent(decreaseArgs);
                 break;
             }
+            case GroupSysEssenceEvent essence:
+            {
+                var essenceArgs = new GroupEssenceEvent(essence.GroupUin, essence.Sequence, essence.Random, essence.SetFlag, essence.FromUin, essence.OperatorUin);
+                Collection.Invoker.PostEvent(essenceArgs);
+                break;
+            }
+            case GroupSysPokeEvent poke:
+            {
+                var pokeArgs = new GroupPokeEvent(poke.GroupUin, poke.OperatorUin, poke.TargetUin, poke.Action, poke.Suffix);
+                Collection.Invoker.PostEvent(pokeArgs);
+                break;
+            }
             case FriendSysRequestEvent info:
             {
                 var requestArgs = new FriendRequestEvent(info.SourceUin, info.SourceUid, info.Message, info.Source);
@@ -177,7 +192,7 @@ internal class MessagingLogic : LogicBase
             }
             case FriendSysPokeEvent poke:
             {
-                var pokeArgs = new FriendPokeEvent(poke.FriendUin);
+                var pokeArgs = new FriendPokeEvent(poke.OperatorUin, poke.TargetUin, poke.Action, poke.Suffix);
                 Collection.Invoker.PostEvent(pokeArgs);
                 break;
             }
@@ -198,6 +213,7 @@ internal class MessagingLogic : LogicBase
             {
                 foreach (var chain in chains)
                 {
+                    await ResolveChainMetadata(chain);
                     await ResolveOutgoingChain(chain);
                     await Collection.Highway.UploadResources(chain);
                 }
@@ -378,11 +394,17 @@ internal class MessagingLogic : LogicBase
             chain.GroupMemberInfo = chain.FriendUin == 0 
                 ? groups.FirstOrDefault(x => x.Uin == Collection.Keystore.Uin) 
                 : groups.FirstOrDefault(x => x.Uin == chain.FriendUin);
+
+            chain.Uid ??= chain.GroupMemberInfo?.Uid;
         }
         else
         {
             var friends = await Collection.Business.CachingLogic.GetCachedFriends(false);
-            if (friends.FirstOrDefault(x => x.Uin == chain.FriendUin) is { } friend) chain.FriendInfo = friend;
+            if (friends.FirstOrDefault(x => x.Uin == chain.FriendUin) is { } friend)
+            {
+                chain.FriendInfo = friend;
+                chain.Uid ??= friend.Uid;
+            }
         }
     }
 }

@@ -144,7 +144,7 @@ internal static class MessagePacker
 
         switch (message.Body?.RichText?.Ptt)
         {
-            case { } groupPtt when chain.IsGroup && groupPtt.FileId == 0:  //  for legacy ptt
+            case { } groupPtt when chain.IsGroup && groupPtt.FileId != 0:  //  for legacy ptt
                 chain.Add(new RecordEntity(groupPtt.GroupFileKey, groupPtt.FileName));
                 break;
             case { } privatePtt when !chain.IsGroup: 
@@ -209,8 +209,8 @@ internal static class MessagePacker
     {
         ResponseHead = new ResponseHead
         {
-            FromUid = selfUid,
-            ToUid = chain.IsGroup ? null : chain.Uid,
+            FromUid = chain.Uid,
+            ToUid = chain.IsGroup ? null : selfUid,
             Grp = !chain.IsGroup ? null : new ResponseGrp // for consistency of code so inverted condition
             {
                 GroupUin = chain.GroupUin ?? 0,
@@ -284,7 +284,7 @@ internal static class MessagePacker
         }
         else
         {
-            @base.FriendInfo = new BotFriend(0, message.ResponseHead.FromUid ?? string.Empty, message.ResponseHead.Forward?.FriendName ?? string.Empty, string.Empty, string.Empty);
+            @base.FriendInfo = new BotFriend(0, message.ResponseHead.FromUid ?? string.Empty, message.ResponseHead.Forward?.FriendName ?? string.Empty, string.Empty, string.Empty, string.Empty);
         }
         
         return @base;

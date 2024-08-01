@@ -21,14 +21,14 @@ internal static class SsoPacker
     {
         var writer = new BinaryPacket();
 
-        var sign = signProvider.Sign(packet.Command, packet.Sequence, packet.Payload.ToArray(), out var software, out var token);
+        var sign = signProvider.Sign(packet.Command, packet.Sequence, packet.Payload.ToArray(), out var extra, out var token);
         var signature = new NTDeviceSign
         {
-            Sign = sign == null ? null : new Sign
+            Sign = sign == null ? null : new SecInfo
             {
-                S = software == null ? new Software { Ver = appInfo.PackageSign } : Serializer.Deserialize<Software>(new MemoryStream(software)),
-                Token = token,
-                Signature = sign
+                SecSign = sign,
+                SecToken = token,
+                SecExtra = extra
             },
             Trace = StringGen.GenerateTrace(),
             Uid = keystore.Uid
@@ -62,10 +62,12 @@ internal static class SsoPacker
         int retCode = packet.ReadInt();
         string extra = packet.ReadString(Prefix.Uint32 | Prefix.WithPrefix);
         string command = packet.ReadString(Prefix.Uint32 | Prefix.WithPrefix);
-        packet.ReadString(Prefix.Uint32 | Prefix.WithPrefix); // unknown
-        int isCompressed = packet.ReadInt(); 
-        packet.ReadBytes(Prefix.Uint32 | Prefix.LengthOnly); // Dummy Sso header
-
+        int msgCookieLength = packet.ReadInt() - 4;
+        var msgCookie = packet.ReadBytes(msgCookieLength);
+        int isCompressed = packet.ReadInt();
+        int reserveFieldLength = packet.ReadInt();
+        var reserveField = packet.ReadBytes(reserveFieldLength);
+        
         return retCode == 0 
             ? new SsoPacket(12, command, sequence, isCompressed == 0 ? packet : InflatePacket(packet)) 
             : new SsoPacket(12, command, sequence, retCode, extra);

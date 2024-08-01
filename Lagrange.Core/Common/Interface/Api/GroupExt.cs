@@ -41,6 +41,12 @@ public static class GroupExt
     
     public static Task<bool> SetGroupAdmin(this BotContext bot, uint groupUin, uint targetUin, bool isAdmin)
         => bot.ContextCollection.Business.OperationLogic.SetGroupAdmin(groupUin, targetUin, isAdmin);
+
+    public static Task<bool> SetGroupBot(this BotContext bot, uint targetUin, uint On, uint groupUin)
+        => bot.ContextCollection.Business.OperationLogic.SetGroupBot(targetUin, On, groupUin);
+
+    public static Task<bool> SetGroupBotHD(this BotContext bot, uint targetUin, uint groupUin)
+        => bot.ContextCollection.Business.OperationLogic.SetGroupBotHD(targetUin, groupUin);
     
     public static Task<bool> RenameGroupMember(this BotContext bot, uint groupUin, uint targetUin, string targetName)
         => bot.ContextCollection.Business.OperationLogic.RenameGroupMember(groupUin, targetUin, targetName);
@@ -97,6 +103,9 @@ public static class GroupExt
     
     public static Task<bool> GroupFSDelete(this BotContext bot, uint groupUin, string fileId)
         => bot.ContextCollection.Business.OperationLogic.GroupFSDelete(groupUin, fileId);
+    
+    public static Task<bool> GroupFSCreateFolder(this BotContext bot, uint groupUin, string name)
+        => bot.ContextCollection.Business.OperationLogic.GroupFSCreateFolder(groupUin, name);
     
     public static Task<bool> GroupFSUpload(this BotContext bot, uint groupUin, FileEntity fileEntity, string targetDirectory = "/")
         => bot.ContextCollection.Business.OperationLogic.GroupFSUpload(groupUin, fileEntity, targetDirectory);

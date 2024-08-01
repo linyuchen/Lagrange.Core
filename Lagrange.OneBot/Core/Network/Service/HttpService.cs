@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 using System.Net;
-using System.Net.NetworkInformation;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using Lagrange.OneBot.Core.Network.Options;
 using Microsoft.Extensions.Hosting;
@@ -26,13 +26,6 @@ public sealed partial class HttpService(
 
     protected override async Task ExecuteAsync(CancellationToken token)
     {
-        uint port = _options.Port;
-        if (IsPortInUse(port))
-        {
-            Log.LogPortInUse(_logger, port);
-            return;
-        }
-
         string prefix = $"http://{_options.Host}:{_options.Port}/";
 
         try
@@ -88,9 +81,12 @@ public sealed partial class HttpService(
         var response = context.Response; // no using cause we might need to use it in SendJsonAsync
         var query = request.QueryString; // avoid creating a new nvc every get
 
+
         try
         {
             string identifier = Guid.NewGuid().ToString();
+            Log.LogRequest(_logger, identifier, request.RemoteEndPoint.ToString());
+
             if (!string.IsNullOrEmpty(_options.AccessToken))
             {
                 var authorization = request.Headers.Get("Authorization") ??
@@ -127,35 +123,55 @@ public sealed partial class HttpService(
                     payload = JsonSerializer.Serialize(new { action, @params });
                     break;
                 }
-                case "POST" when request.ContentType == "application/json":
-                {
-                    using var reader = new StreamReader(request.InputStream);
-                    var body = await reader.ReadToEndAsync(token);
-                    Log.LogReceived(_logger, identifier, body);
-                    payload = $"{{\"action\":\"{action}\",\"params\":{body}}}";
-                    break;
-                }
-                case "POST" when request.ContentType == "application/x-www-form-urlencoded":
-                {
-                    using var reader = new StreamReader(request.InputStream);
-                    var body = await reader.ReadToEndAsync(token);
-                    Log.LogReceived(_logger, identifier, body);
-                    var @params = body.Split('&')
-                        .Select(pair => pair.Split('=', 2))
-                        .ToDictionary(pair => pair[0], pair => Uri.UnescapeDataString(pair[1]));
-                    payload = JsonSerializer.Serialize(new { action, @params });
-                    break;
-                }
                 case "POST":
-                    Log.LogUnsupportedContentType(_logger, request.ContentType ?? string.Empty);
-                    response.StatusCode = (int)HttpStatusCode.NotAcceptable; // make them happy
-                    response.Close();
-                    return;
+                {
+                    if (!MediaTypeHeaderValue.TryParse(request.ContentType, out var mediaType))
+                    {
+                        Log.LogCannotParseMediaType(_logger, request.ContentType ?? string.Empty);
+                        response.StatusCode = (int)HttpStatusCode.UnsupportedMediaType;
+                        response.Close();
+                        return;
+                    }
+
+                    switch (mediaType.MediaType)
+                    {
+                        case "application/json":
+                        {
+
+                            using var reader = new StreamReader(request.InputStream);
+                            var body = await reader.ReadToEndAsync(token);
+                            Log.LogReceived(_logger, identifier, body);
+                            payload = $"{{\"action\":\"{action}\",\"params\":{body}}}";
+                            break;
+                        }
+                        case "application/x-www-form-urlencoded":
+                        {
+                            using var reader = new StreamReader(request.InputStream);
+                            var body = await reader.ReadToEndAsync(token);
+                            Log.LogReceived(_logger, identifier, body);
+                            var @params = body.Split('&')
+                                .Select(pair => pair.Split('=', 2))
+                                .ToDictionary(pair => pair[0], pair => Uri.UnescapeDataString(pair[1]));
+                            payload = JsonSerializer.Serialize(new { action, @params });
+                            break;
+                        }
+                        default:
+                        {
+                            Log.LogUnsupportedContentType(_logger, request.ContentType ?? string.Empty);
+                            response.StatusCode = (int)HttpStatusCode.NotAcceptable; // make them happy
+                            response.Close();
+                            return;
+                        }
+                    }
+                    break;
+                }
                 default:
+                {
                     Log.LogUnsupportedMethod(_logger, request.HttpMethod);
                     response.StatusCode = (int)HttpStatusCode.MethodNotAllowed;
                     response.Close();
                     return;
+                }
             }
 
             Log.LogReceived(_logger, identifier, payload);
@@ -169,6 +185,8 @@ public sealed partial class HttpService(
         catch (Exception e)
         {
             Log.LogHandleError(_logger, e);
+            response.StatusCode = (int)HttpStatusCode.InternalServerError;
+            response.Close();
         }
     }
 
@@ -193,47 +211,62 @@ public sealed partial class HttpService(
         }
     }
 
-    private static bool IsPortInUse(uint port) =>
-        IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Any(endpoint => endpoint.Port == port);
-
     private static partial class Log
     {
-        [LoggerMessage(EventId = 0, Level = LogLevel.Information, Message = "HttpService started at {prefix}")]
+        private enum EventIds
+        {
+            Started = 1,
+            Request,
+            Received,
+            Send,
+
+            StartFailed = 1001,
+            CloseFailed,
+            GetContextError,
+            HandleError,
+            AuthFailed,
+            CannotParseMediaType,
+            UnsupportedContentType,
+            UnsupportedMethod,
+        }
+
+        [LoggerMessage(EventId = (int)EventIds.Started, Level = LogLevel.Information, Message = "HttpService started at {prefix}")]
         public static partial void LogStarted(ILogger logger, string prefix);
 
-        [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "Receive(Conn: {identifier}: {s})")]
+        [LoggerMessage(EventId = (int)EventIds.Request, Level = LogLevel.Information, Message = "Request(Conn: {identifier} from {ip})")]
+        public static partial void LogRequest(ILogger logger, string identifier, string ip);
+
+        [LoggerMessage(EventId = (int)EventIds.Received, Level = LogLevel.Information, Message = "Receive(Conn: {identifier}: {s})")]
         public static partial void LogReceived(ILogger logger, string identifier, string s);
 
-        [LoggerMessage(EventId = 2, Level = LogLevel.Trace, Message = "Send(Conn: {identifier}: {s})")]
+        [LoggerMessage(EventId = (int)EventIds.Send, Level = LogLevel.Trace, Message = "Send(Conn: {identifier}: {s})")]
         public static partial void LogSend(ILogger logger, string identifier, string s);
 
+        [LoggerMessage(EventId = (int)EventIds.CannotParseMediaType, Level = LogLevel.Warning, Message = "Cannot parse media type: {mediaType}")]
+        public static partial void LogCannotParseMediaType(ILogger logger, string mediaType);
 
-        [LoggerMessage(EventId = 992, Level = LogLevel.Warning, Message = "Conn: {identifier} auth failed")]
+        [LoggerMessage(EventId = (int)EventIds.AuthFailed, Level = LogLevel.Warning, Message = "Conn: {identifier} auth failed")]
         public static partial void LogAuthFailed(ILogger logger, string identifier);
 
-        [LoggerMessage(EventId = 993, Level = LogLevel.Warning, Message = "Unsupported content type: {contentType}")]
+        [LoggerMessage(EventId = (int)EventIds.UnsupportedContentType, Level = LogLevel.Warning, Message = "Unsupported content type: {contentType}")]
         public static partial void LogUnsupportedContentType(ILogger logger, string contentType);
 
-        [LoggerMessage(EventId = 994, Level = LogLevel.Warning, Message = "Unsupported method: {method}")]
+        [LoggerMessage(EventId = (int)EventIds.UnsupportedMethod, Level = LogLevel.Warning, Message = "Unsupported method: {method}")]
         public static partial void LogUnsupportedMethod(ILogger logger, string method);
 
-        [LoggerMessage(EventId = 995, Level = LogLevel.Warning,
+        [LoggerMessage(EventId = (int)EventIds.HandleError, Level = LogLevel.Warning,
             Message = "An error occurred while handling the request")]
         public static partial void LogHandleError(ILogger logger, Exception e);
 
-        [LoggerMessage(EventId = 996, Level = LogLevel.Warning,
+        [LoggerMessage(EventId = (int)EventIds.GetContextError, Level = LogLevel.Warning,
             Message = "An error occurred while getting the context")]
         public static partial void LogGetContextError(ILogger logger, Exception e);
 
-        [LoggerMessage(EventId = 997, Level = LogLevel.Warning, Message = "Failed to gracefully close the listener")]
+        [LoggerMessage(EventId = (int)EventIds.CloseFailed, Level = LogLevel.Warning, Message = "Failed to gracefully close the listener")]
         public static partial void LogCloseFailed(ILogger logger, Exception e);
 
-        [LoggerMessage(EventId = 998, Level = LogLevel.Error,
+        [LoggerMessage(EventId = (int)EventIds.StartFailed, Level = LogLevel.Error,
             Message = "An error occurred while starting the listener")]
         public static partial void LogStartFailed(ILogger logger, Exception e);
-
-        [LoggerMessage(EventId = 999, Level = LogLevel.Error,
-            Message = "The port {port} is in use, service failed to start")]
-        public static partial void LogPortInUse(ILogger logger, uint port);
     }
 }
