@@ -15,6 +15,10 @@
 
 </div>
 
+## 与原仓库的差异
+
+* 新增 API : /get_rkey
+
 ## Related Projects
 
 <table>
