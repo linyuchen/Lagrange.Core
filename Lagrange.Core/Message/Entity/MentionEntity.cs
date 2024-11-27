@@ -1,7 +1,6 @@
 using Lagrange.Core.Internal.Packets.Message.Element;
 using Lagrange.Core.Internal.Packets.Message.Element.Implementation;
 using Lagrange.Core.Internal.Packets.Message.Element.Implementation.Extra;
-using Lagrange.Core.Utility.Extension;
 using ProtoBuf;
 using BitConverter = Lagrange.Core.Utility.Binary.BitConverter;
 
@@ -40,7 +39,7 @@ public class MentionEntity : IMessageEntity
             Type = Uin == 0 ? 1 : 2,
             Uin = 0,
             Field5 = 0,
-            Uid = Uid,
+            Uid = Uid, // Must be a legal value
         };
         using var stream = new MemoryStream();
         Serializer.Serialize(stream, reserve);
@@ -60,7 +59,7 @@ public class MentionEntity : IMessageEntity
     
     IMessageEntity? IMessageEntity.UnpackElement(Elem elems)
     {
-        if (elems.Text is { Str: not null, Attr6Buf: { } attr, PbReserve: not null })
+        if (elems.Text is { Str: not null, Attr6Buf: { Length: >= 11 } attr })
         {
             return new MentionEntity
             {
@@ -69,7 +68,7 @@ public class MentionEntity : IMessageEntity
                 Uid = ""
             };
         }
-        
+
         return null;
     }
 

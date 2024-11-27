@@ -25,6 +25,9 @@ internal class CachingLogic : LogicBase
 
     private readonly ConcurrentDictionary<uint, BotUserInfo> _cacheUsers;
 
+    private readonly Dictionary<uint, SysFaceEntry> _cacheFaceEntities;
+    private readonly List<uint> _cacheSuperFaceId;
+
     internal CachingLogic(ContextCollection collection) : base(collection)
     {
         _uinToUid = new Dictionary<uint, string>();
@@ -34,7 +37,10 @@ internal class CachingLogic : LogicBase
         _cachedFriends = new List<BotFriend>();
         _cachedGroupMembers = new Dictionary<uint, List<BotGroupMember>>();
 
-        _cacheUsers = new();
+        _cacheUsers = new ConcurrentDictionary<uint, BotUserInfo>();
+
+        _cacheFaceEntities = new Dictionary<uint, SysFaceEntry>();
+        _cacheSuperFaceId = new List<uint>();
     }
 
     public override Task Incoming(ProtocolEvent e)
@@ -67,7 +73,7 @@ internal class CachingLogic : LogicBase
 
     public async Task<string?> ResolveUid(uint? groupUin, uint friendUin)
     {
-        if (_uinToUid.Count == 0) await ResolveFriendsUid();
+        if (_uinToUid.Count == 0) await ResolveFriendsUidAndFriendGroups();
         if (groupUin == null) return _uinToUid.GetValueOrDefault(friendUin);
 
         await CacheUid(groupUin.Value);
@@ -77,7 +83,7 @@ internal class CachingLogic : LogicBase
 
     public async Task<uint?> ResolveUin(uint? groupUin, string friendUid, bool force = false)
     {
-        if (_uinToUid.Count == 0) await ResolveFriendsUid();
+        if (_uinToUid.Count == 0) await ResolveFriendsUidAndFriendGroups();
         if (groupUin == null) return _uinToUid.FirstOrDefault(x => x.Value == friendUid).Key;
 
         await CacheUid(groupUin.Value, force);
@@ -92,12 +98,13 @@ internal class CachingLogic : LogicBase
             await ResolveMembersUid(groupUin);
             return _cachedGroupMembers.TryGetValue(groupUin, out members) ? members : new List<BotGroupMember>();
         }
+
         return members;
     }
 
     public async Task<List<BotFriend>> GetCachedFriends(bool refreshCache)
     {
-        if (_cachedFriends.Count == 0 || refreshCache) await ResolveFriendsUid();
+        if (_cachedFriends.Count == 0 || refreshCache) await ResolveFriendsUidAndFriendGroups();
         return _cachedFriends;
     }
 
@@ -118,32 +125,40 @@ internal class CachingLogic : LogicBase
         }
     }
 
-    private async Task ResolveFriendsUid()
+    private async Task ResolveFriendsUidAndFriendGroups()
     {
-        var fetchFriendsEvent = FetchFriendsEvent.Create();
-        var events = await Collection.Business.SendEvent(fetchFriendsEvent);
-
-        if (events.Count != 0)
+        uint? next = null;
+        var friends = new List<BotFriend>();
+        var friendGroups = new Dictionary<uint, string>();
+        do
         {
-            var @event = (FetchFriendsEvent)events[0];
-            uint? nextUin = @event.NextUin;
+            var @event = FetchFriendsEvent.Create(next);
+            var results = await Collection.Business.SendEvent(@event);
 
-            while (nextUin != null)
+            if (results.Count == 0)
             {
-                var next = FetchFriendsEvent.Create(nextUin);
-                var results = await Collection.Business.SendEvent(next);
-                @event.Friends.AddRange(((FetchFriendsEvent)results[0]).Friends);
-                nextUin = ((FetchFriendsEvent)results[0]).NextUin;
+                Collection.Log.LogWarning(Tag, "Failed to resolve friends uid and cache.");
+                return;
             }
 
-            foreach (var friend in @event.Friends) _uinToUid.TryAdd(friend.Uin, friend.Uid);
-            _cachedFriends.Clear();
-            _cachedFriends.AddRange(@event.Friends);
-        }
-        else
-        {
-            Collection.Log.LogWarning(Tag, "Failed to resolve friends uid and cache.");
-        }
+            var result = (FetchFriendsEvent)results[0];
+
+            foreach ((uint id, string name) in result.FriendGroups) friendGroups[id] = name;
+
+            foreach (var friend in result.Friends)
+            {
+                friend.Group = new(friend.Group.GroupId, friendGroups[friend.Group.GroupId]);
+            }
+
+            friends.AddRange(result.Friends);
+
+            next = result.NextUin;
+        } while (next.HasValue);
+
+        foreach (var friend in friends) _uinToUid.TryAdd(friend.Uin, friend.Uid);
+
+        _cachedFriends.Clear();
+        _cachedFriends.AddRange(friends);
     }
 
     private async Task ResolveMembersUid(uint groupUin)
@@ -182,5 +197,33 @@ internal class CachingLogic : LogicBase
         {
             _cacheUsers.AddOrUpdate(uin, @event.UserInfo, (_key, _value) => @event.UserInfo);
         }
+    }
+
+    private async Task ResolveEmojiCache()
+    {
+        var fetchSysEmojisEvent = FetchFullSysFacesEvent.Create();
+        var events = await Collection.Business.SendEvent(fetchSysEmojisEvent);
+        var emojiPacks = ((FetchFullSysFacesEvent)events[0]).FacePacks;
+
+        emojiPacks
+            .SelectMany(pack => pack.Emojis)
+            .Where(emoji => uint.TryParse(emoji.QSid, out _))
+            .ToList()
+            .ForEach(emoji => _cacheFaceEntities[uint.Parse(emoji.QSid)] = emoji);
+
+        _cacheSuperFaceId.AddRange(emojiPacks
+            .SelectMany(emojiPack => emojiPack.GetUniqueSuperQSids(new[] { (1, 1) })));
+    }
+
+    public async Task<bool> GetCachedIsSuperFaceId(uint id)
+    {
+        if (!_cacheSuperFaceId.Any()) await ResolveEmojiCache();
+        return _cacheSuperFaceId.Contains(id);
+    }
+
+    public async Task<SysFaceEntry?> GetCachedFaceEntity(uint faceId)
+    {
+        if (!_cacheFaceEntities.ContainsKey(faceId)) await ResolveEmojiCache();
+        return _cacheFaceEntities.GetValueOrDefault(faceId);
     }
 }

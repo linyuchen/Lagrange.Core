@@ -6,11 +6,12 @@ using Lagrange.Core.Message.Entity;
 using Lagrange.OneBot.Core.Entity.Notify;
 using Lagrange.OneBot.Core.Network;
 using Lagrange.OneBot.Database;
+using LiteDB;
 using Microsoft.Extensions.Logging;
 
 namespace Lagrange.OneBot.Core.Notify;
 
-public sealed class NotifyService(BotContext bot, ILogger<NotifyService> logger, LagrangeWebSvcCollection service)
+public sealed class NotifyService(BotContext bot, ILogger<NotifyService> logger, LagrangeWebSvcCollection service, LiteDatabase database)
 {
     public void RegisterEvents()
     {
@@ -64,7 +65,7 @@ public sealed class NotifyService(BotContext bot, ILogger<NotifyService> logger,
             var requests = await bot.FetchGroupRequests();
             if (requests?.FirstOrDefault(x => @event.GroupUin == x.GroupUin && @event.TargetUin == x.TargetMemberUin) is { } request)
             {
-                string flag = $"{request.Sequence}-{request.GroupUin}-{(uint)request.EventType}";
+                string flag = $"{request.Sequence}-{request.GroupUin}-{(uint)request.EventType}-{Convert.ToInt32(request.IsFiltered)}";
                 await service.SendJsonAsync(new OneBotGroupRequest(bot.BotUin, @event.TargetUin, @event.GroupUin, "add", request.Comment, flag));
             }
         };
@@ -114,6 +115,7 @@ public sealed class NotifyService(BotContext bot, ILogger<NotifyService> logger,
             string type = @event.Type switch
             {
                 GroupMemberDecreaseEvent.EventType.KickMe => "kick_me",
+                GroupMemberDecreaseEvent.EventType.Disband => "disband",
                 GroupMemberDecreaseEvent.EventType.Leave => "leave",
                 GroupMemberDecreaseEvent.EventType.Kick => "kick",
                 _ => @event.Type.ToString()
@@ -136,17 +138,27 @@ public sealed class NotifyService(BotContext bot, ILogger<NotifyService> logger,
                 GroupId = @event.GroupUin,
                 UserId = @event.AuthorUin,
                 MessageId = MessageRecord.CalcMessageHash(@event.Random, @event.Sequence),
-                OperatorId = @event.OperatorUin
+                OperatorId = @event.OperatorUin,
+                Tip = @event.Tip
             });
         };
 
         bot.Invoker.OnFriendRecallEvent += async (_, @event) =>
         {
             logger.LogInformation(@event.ToString());
+
+            var collection = database.GetCollection<MessageRecord>();
+            var record = collection.FindOne(Query.And(
+                Query.EQ("FriendUin", new BsonValue(@event.FriendUin)),
+                Query.EQ("ClientSequence", new BsonValue(@event.ClientSequence)),
+                Query.EQ("MessageId", new BsonValue(0x01000000L << 32 | @event.Random))
+            ));
+
             await service.SendJsonAsync(new OneBotFriendRecall(bot.BotUin)
             {
                 UserId = @event.FriendUin,
-                MessageId = MessageRecord.CalcMessageHash(@event.Random, @event.Sequence),
+                MessageId = MessageRecord.CalcMessageHash(@event.Random, record.Sequence),
+                Tip = @event.Tip
             });
         };
 
@@ -157,9 +169,10 @@ public sealed class NotifyService(BotContext bot, ILogger<NotifyService> logger,
             {
                 SenderId = @event.OperatorUin,
                 UserId = @event.OperatorUin,
-                TargetId = bot.BotUin,
+                TargetId = @event.TargetUin,
                 Action = @event.Action,
-                Suffix = @event.Suffix
+                Suffix = @event.Suffix,
+                ActionImgUrl = @event.ActionImgUrl
             });
         };
 
@@ -172,7 +185,8 @@ public sealed class NotifyService(BotContext bot, ILogger<NotifyService> logger,
                 UserId = @event.OperatorUin,
                 TargetId = @event.TargetUin,
                 Action = @event.Action,
-                Suffix = @event.Suffix
+                Suffix = @event.Suffix,
+                ActionImgUrl = @event.ActionImgUrl
             });
         };
 
@@ -187,6 +201,55 @@ public sealed class NotifyService(BotContext bot, ILogger<NotifyService> logger,
                 OperatorId = @event.OperatorUin,
                 MessageId = MessageRecord.CalcMessageHash(@event.Random, @event.Sequence),
             });
+        };
+
+        bot.Invoker.OnGroupReactionEvent += async (bot, @event) =>
+        {
+            logger.LogInformation(@event.ToString());
+
+            var record = database.GetCollection<MessageRecord>().FindOne(Query.And(
+                Query.EQ("GroupUin", new BsonValue(@event.TargetGroupUin)),
+                Query.EQ("Sequence", new BsonValue(@event.TargetSequence))
+            ));
+
+            if (record == null)
+            {
+                logger.LogInformation(
+                    "Unable to find the corresponding message using GroupUin: {} and Sequence: {}",
+                    @event.TargetGroupUin,
+                    @event.TargetSequence
+                );
+            }
+
+            await service.SendJsonAsync(new OneBotGroupReaction(
+                bot.BotUin,
+                @event.TargetGroupUin,
+                record?.MessageHash ?? 0,
+                @event.OperatorUin,
+                @event.IsAdd ? "add" : "remove",
+                @event.Code,
+                @event.Count
+            ));
+        };
+
+        bot.Invoker.OnGroupNameChangeEvent += async (bot, @event) =>
+        {
+            logger.LogInformation("{}", @event);
+            await service.SendJsonAsync(new OneBotGroupNameChange(
+                bot.BotUin,
+                @event.GroupUin,
+                @event.Name
+            ));
+        };
+
+        bot.Invoker.OnBotOnlineEvent += async (bot, @event) =>
+        {
+            await service.SendJsonAsync(new OneBotBotOnline(bot.BotUin, @event.Reason));
+        };
+
+        bot.Invoker.OnBotOfflineEvent += async (bot, @event) =>
+        {
+            await service.SendJsonAsync(new OneBotBotOffline(bot.BotUin, @event.Tag, @event.Message));
         };
     }
 }

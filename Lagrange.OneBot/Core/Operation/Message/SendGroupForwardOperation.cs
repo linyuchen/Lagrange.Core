@@ -18,11 +18,15 @@ public class SendGroupForwardOperation(MessageCommon common) : IOperation
     {
         if (payload.Deserialize<OneBotGroupForward>(SerializerOptions.DefaultOptions) is { } forward)
         {
-            var chains = common.BuildForwardChains(context, forward, forward.GroupId);
+            var chains = common.BuildForwardChains(context, forward);
 
-            var multi = new MultiMsgEntity(forward.GroupId, [.. chains]);
+            var multi = new MultiMsgEntity(chains);
             var chain = MessageBuilder.Group(forward.GroupId).Add(multi).Build();
             var ret = await context.SendMessage(chain);
+
+            if (ret.Result != 0) return new OneBotResult(null, (int)ret.Result, "failed");
+            if (ret.Sequence == null || ret.Sequence == 0) return new OneBotResult(null, 9000, "failed");
+
             int hash = MessageRecord.CalcMessageHash(chain.MessageId, ret.Sequence ?? 0);
 
             return new OneBotResult(new OneBotForwardResponse(hash, multi.ResId ?? ""), (int)ret.Result, "ok");

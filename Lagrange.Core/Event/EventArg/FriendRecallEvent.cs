@@ -3,20 +3,23 @@ namespace Lagrange.Core.Event.EventArg;
 public class FriendRecallEvent : EventBase
 {
     public uint FriendUin { get; }
-    
-    public uint Sequence { get; }
-    
+
+    public uint ClientSequence { get; }
+
     public uint Time { get; }
-    
+
     public uint Random { get; }
 
-    public FriendRecallEvent(uint friendUin, uint sequence, uint time, uint random)
+    public string Tip { get; }
+
+    public FriendRecallEvent(uint friendUin, uint clientSequence, uint time, uint random, string tip)
     {
         FriendUin = friendUin;
-        Sequence = sequence;
+        ClientSequence = clientSequence;
         Time = time;
         Random = random;
-        
-        EventMessage = $"{nameof(FriendRecallEvent)}: {FriendUin} | ({Sequence} | {Time} | {Random})";
+        Tip = tip;
+
+        EventMessage = $"{nameof(FriendRecallEvent)}: {FriendUin} | ({ClientSequence} | {Time} | {Random} | {Tip})";
     }
 }

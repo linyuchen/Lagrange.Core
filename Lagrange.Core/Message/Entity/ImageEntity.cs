@@ -1,8 +1,6 @@
 using System.Numerics;
-using Lagrange.Core.Internal.Packets.Message.Component.Extra;
 using Lagrange.Core.Internal.Packets.Message.Element;
 using Lagrange.Core.Internal.Packets.Message.Element.Implementation;
-using Lagrange.Core.Internal.Packets.Message.Element.Implementation.Extra;
 using Lagrange.Core.Internal.Packets.Service.Oidb.Common;
 using Lagrange.Core.Utility.Extension;
 using ProtoBuf;
@@ -22,6 +20,8 @@ public class ImageEntity : IMessageEntity
 
     public string FilePath { get; set; } = string.Empty;
 
+    public byte[] ImageMd5 { get; set; } = Array.Empty<byte>();
+
     public uint ImageSize { get; set; }
 
     public string ImageUrl { get; set; } = string.Empty;
@@ -39,8 +39,14 @@ public class ImageEntity : IMessageEntity
     internal CustomFace? CompatFace { get; set; }
 
     internal string? Summary { get; set; }
-    
-    internal int SubType { get; set; }
+
+    public int SubType { get; set; }
+
+    internal bool IsGroup => GroupUin.HasValue;
+
+    internal uint? GroupUin { get; set; }
+
+    internal string? FriendUid { get; set; }
 
     public ImageEntity() { }
 
@@ -55,7 +61,7 @@ public class ImageEntity : IMessageEntity
         FilePath = "";
         ImageStream = new Lazy<Stream>(() => new MemoryStream(file));
     }
-    
+
     public ImageEntity(Stream stream)
     {
         FilePath = "";
@@ -64,6 +70,8 @@ public class ImageEntity : IMessageEntity
 
     IEnumerable<Elem> IMessageEntity.PackElement()
     {
+        bool isGroup = MsgInfo?.MsgInfoBody is { Count: > 0 } body && body[0].HashSum.TroopSource?.GroupUin != null;
+
         var common = MsgInfo.Serialize();
 
         var elems = new Elem[]
@@ -75,7 +83,7 @@ public class ImageEntity : IMessageEntity
                 {
                     ServiceType = 48,
                     PbElem = common.ToArray(),
-                    BusinessType = 10,
+                    BusinessType = isGroup ? 20u : 10u,
                 }
             }
         };
@@ -88,20 +96,25 @@ public class ImageEntity : IMessageEntity
 
     IMessageEntity? IMessageEntity.UnpackElement(Elem elems)
     {
-        if (elems.CommonElem is { BusinessType: 20 or 10 } common)
+        if (elems.CommonElem is { ServiceType: 48, BusinessType: 20 or 10 } common)
         {
             var extra = Serializer.Deserialize<MsgInfo>(common.PbElem.AsSpan());
-            var index = extra.MsgInfoBody[0].Index;
+            var msgInfoBody = extra.MsgInfoBody[0];
+            var index = msgInfoBody.Index;
 
             return new ImageEntity
             {
                 PictureSize = new Vector2(index.Info.Width, index.Info.Height),
                 FilePath = index.Info.FileName,
+                ImageMd5 = index.Info.FileHash.UnHex(),
                 ImageSize = index.Info.FileSize,
-                MsgInfo = extra
+                MsgInfo = extra,
+                SubType = (int)extra.ExtBizInfo.Pic.BizType,
+                GroupUin = msgInfoBody.HashSum.TroopSource?.GroupUin,
+                FriendUid = msgInfoBody.HashSum.BytesPbReserveC2c?.FriendUid
             };
         }
-        
+
         if (elems.NotOnlineImage is { } image)
         {
             if (image.OrigUrl.Contains("&fileid=")) // NTQQ's shit
@@ -110,18 +123,19 @@ public class ImageEntity : IMessageEntity
                 {
                     PictureSize = new Vector2(image.PicWidth, image.PicHeight),
                     FilePath = image.FilePath,
+                    ImageMd5 = image.PicMd5,
                     ImageSize = image.FileLen,
                     ImageUrl = $"{BaseUrl}{image.OrigUrl}",
                     Summary = image.PbRes.Summary,
                     SubType = image.PbRes.SubType
                 };
-
             }
 
             return new ImageEntity
             {
                 PictureSize = new Vector2(image.PicWidth, image.PicHeight),
                 FilePath = image.FilePath,
+                ImageMd5 = image.PicMd5,
                 ImageSize = image.FileLen,
                 ImageUrl = $"{LegacyBaseUrl}{image.OrigUrl}",
                 Summary = image.PbRes.Summary,
@@ -137,18 +151,19 @@ public class ImageEntity : IMessageEntity
                 {
                     PictureSize = new Vector2(face.Width, face.Height),
                     FilePath = face.FilePath,
+                    ImageMd5 = face.Md5,
                     ImageSize = face.Size,
                     ImageUrl = $"{BaseUrl}{face.OrigUrl}",
                     Summary = face.PbReserve?.Summary,
                     SubType = face.PbReserve?.SubType ?? GetImageTypeFromFaceOldData(face)
                 };
-
             }
 
             return new ImageEntity
             {
                 PictureSize = new Vector2(face.Width, face.Height),
                 FilePath = face.FilePath,
+                ImageMd5 = face.Md5,
                 ImageSize = face.Size,
                 ImageUrl = $"{LegacyBaseUrl}{face.OrigUrl}",
                 Summary = face.PbReserve?.Summary,
@@ -158,14 +173,11 @@ public class ImageEntity : IMessageEntity
 
         return null;
     }
-    
+
     private static int GetImageTypeFromFaceOldData(CustomFace face)
     {
-        if (face.OldData.Length < 5)
-        {
-            return 0;
-        }
-        // maybe legacy PCQQ(TIM)
+        if (face.OldData is not { Length: >= 5 }) return 0;  // maybe legacy PCQQ(TIM)
+
         return face.OldData[4].ToString("X2") switch
         {
             "36" => 1,

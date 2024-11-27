@@ -6,15 +6,15 @@ namespace Lagrange.Core.Event;
 public partial class EventInvoker : IDisposable
 {
     private const string Tag = "EventInvoker";
-    
+
     private readonly Dictionary<Type, Action<EventBase>> _events;
-    
+
     public delegate void LagrangeEvent<in TEvent>(BotContext context, TEvent e) where TEvent : EventBase;
 
     internal EventInvoker(BotContext context)
     {
         _events = new Dictionary<Type, Action<EventBase>>();
-        
+
         RegisterEvent((BotOnlineEvent e) => OnBotOnlineEvent?.Invoke(context, e));
         RegisterEvent((BotOfflineEvent e) => OnBotOfflineEvent?.Invoke(context, e));
         RegisterEvent((BotLogEvent e) => OnBotLogEvent?.Invoke(context, e));
@@ -38,8 +38,13 @@ public partial class EventInvoker : IDisposable
         RegisterEvent((FriendPokeEvent e) => OnFriendPokeEvent?.Invoke(context, e));
         RegisterEvent((GroupPokeEvent e) => OnGroupPokeEvent?.Invoke(context, e));
         RegisterEvent((GroupEssenceEvent e) => OnGroupEssenceEvent?.Invoke(context, e));
+        RegisterEvent((GroupReactionEvent e) => OnGroupReactionEvent?.Invoke(context, e));
+        RegisterEvent((GroupNameChangeEvent e) => OnGroupNameChangeEvent?.Invoke(context, e));
+        RegisterEvent((GroupTodoEvent e) => OnGroupTodoEvent?.Invoke(context, e));
+        RegisterEvent((GroupMemberEnterEvent e) => OnGroupMemberEnterEvent?.Invoke(context, e));
+        RegisterEvent((PinChangedEvent e) => OnPinChangedEvent?.Invoke(context, e));
     }
-    
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void RegisterEvent<TEvent>(Action<TEvent> action) where TEvent : EventBase => _events[typeof(TEvent)] = e => action((TEvent)e);
 
@@ -58,7 +63,7 @@ public partial class EventInvoker : IDisposable
             }
         });
     }
-    
+
     public void Dispose()
     {
         GC.SuppressFinalize(this);

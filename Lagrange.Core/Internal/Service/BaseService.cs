@@ -1,6 +1,5 @@
 using Lagrange.Core.Common;
 using Lagrange.Core.Internal.Event;
-using Lagrange.Core.Utility.Binary;
 
 namespace Lagrange.Core.Internal.Service;
 
@@ -13,8 +12,8 @@ internal class BaseService<TEvent> : IService where TEvent : ProtocolEvent
         return (output = null!) != null;
     }
 
-    protected virtual bool Build(TEvent input, BotKeystore keystore, BotAppInfo appInfo, BotDeviceInfo device, 
-        out BinaryPacket output, out List<BinaryPacket>? extraPackets)
+    protected virtual bool Build(TEvent input, BotKeystore keystore, BotAppInfo appInfo, BotDeviceInfo device,
+        out Span<byte> output, out List<Memory<byte>>? extraPackets)
     {
         extraPackets = null;
         return (output = null!) != null;
@@ -29,6 +28,6 @@ internal class BaseService<TEvent> : IService where TEvent : ProtocolEvent
     }
 
     bool IService.Build(ProtocolEvent input, BotKeystore keystore, BotAppInfo appInfo, BotDeviceInfo device,
-        out BinaryPacket? output, out List<BinaryPacket>? extraPackets) =>
+        out Span<byte> output, out List<Memory<byte>>? extraPackets) =>
         Build((TEvent) input, keystore, appInfo, device, out output, out extraPackets);
 }

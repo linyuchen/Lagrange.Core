@@ -3,7 +3,6 @@ using Lagrange.Core.Internal.Event;
 using Lagrange.Core.Internal.Event.Action;
 using Lagrange.Core.Internal.Packets.Service.Oidb;
 using Lagrange.Core.Internal.Packets.Service.Oidb.Request;
-using Lagrange.Core.Utility.Binary;
 using Lagrange.Core.Utility.Extension;
 using ProtoBuf;
 
@@ -13,20 +12,20 @@ namespace Lagrange.Core.Internal.Service.Action;
 [Service("OidbSvcTrpcTcp.0x10c8_1")]
 internal class SetGroupRequestService : BaseService<SetGroupRequestEvent>
 {
-    protected override bool Build(SetGroupRequestEvent input, BotKeystore keystore, BotAppInfo appInfo, BotDeviceInfo device, 
-        out BinaryPacket output, out List<BinaryPacket>? extraPackets)
+    protected override bool Build(SetGroupRequestEvent input, BotKeystore keystore, BotAppInfo appInfo,
+        BotDeviceInfo device, out Span<byte> output, out List<Memory<byte>>? extraPackets)
     {
-        var packet = new OidbSvcTrpcTcpBase<OidbSvcTrpcTcp0x10C8_1>(new OidbSvcTrpcTcp0x10C8_1
+        var packet = new OidbSvcTrpcTcpBase<OidbSvcTrpcTcp0x10C8>(new OidbSvcTrpcTcp0x10C8
         {
             Accept = Convert.ToUInt32(!input.Accept) + 1,
-            Body = new OidbSvcTrpcTcp0x10C8_1Body
+            Body = new OidbSvcTrpcTcp0x10C8Body
             {
                 Sequence = input.Sequence,
                 EventType = input.Type,
                 GroupUin = input.GroupUin,
-                Message = ""
+                Message = input.Reason
             }
-        });
+        }, 0x10c8, 1, false, true);
         
         output = packet.Serialize();
         extraPackets = null;

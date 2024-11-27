@@ -14,6 +14,8 @@ public class ForwardEntity : IMessageEntity
 
     public uint Sequence { get; set; }
 
+    public uint ClientSequence { get; set; }
+
     public string? Uid { get; set; }
 
     public uint TargetUin { get; set; }
@@ -33,6 +35,7 @@ public class ForwardEntity : IMessageEntity
     {
         Time = chain.Time;
         Sequence = chain.Sequence;
+        ClientSequence = chain.ClientSequence;
         Uid = chain.Uid;
         Elements = chain.Elements;
         TargetUin = chain.FriendUin;
@@ -44,9 +47,6 @@ public class ForwardEntity : IMessageEntity
         var forwardReserve = new SrcMsg.Preserve
         {
             MessageId = MessageId,
-            ReceiverUid = SelfUid,
-            SenderUid = Uid,
-            ClientSequence = 0
         };
         using var forwardStream = new MemoryStream();
         Serializer.Serialize(forwardStream, forwardReserve);
@@ -67,9 +67,9 @@ public class ForwardEntity : IMessageEntity
             {
                 SrcMsg = new SrcMsg
                 {
-                    OrigSeqs = new List<uint> { Sequence },
-                    SenderUin = TargetUin,
-                    Time = (int)(Time - new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds,
+                    OrigSeqs = new List<uint> { ClientSequence != 0 ? ClientSequence : Sequence },
+                    SenderUin = TargetUin, // Can't get self uin
+                    Time = (int)new DateTimeOffset(Time).ToUnixTimeSeconds(),
                     Elems = Elements,
                     PbReserve = forwardStream.ToArray(),
                     ToUin = 0
@@ -77,11 +77,11 @@ public class ForwardEntity : IMessageEntity
             },
             new()
             {
-                Text = new Text
-                {
-                    Str = null,
+                Text = ClientSequence == 0 ? new Text
+                { 
+                    Str = "not null",
                     PbReserve = mentionStream.ToArray()
-                }
+                } : null
             }
         };
     }
@@ -93,7 +93,8 @@ public class ForwardEntity : IMessageEntity
             var reserve = Serializer.Deserialize<SrcMsg.Preserve>(srcMsg.PbReserve.AsSpan());
             return new ForwardEntity
             {
-                Sequence = srcMsg.OrigSeqs?[0] ?? 0,
+                Time = DateTimeOffset.FromUnixTimeSeconds(srcMsg.Time ?? 0).LocalDateTime,
+                Sequence = reserve.FriendSequence ?? srcMsg.OrigSeqs?[0] ?? 0,
                 TargetUin = (uint)srcMsg.SenderUin,
                 MessageId = reserve.MessageId
             };
@@ -104,7 +105,7 @@ public class ForwardEntity : IMessageEntity
 
     public void SetSelfUid(string selfUid) => SelfUid = selfUid;
 
-    public string ToPreviewString() => $"[Forward]: Sequence: {Sequence}";
+    public string ToPreviewString() => $"[Forward] Time: {Time} Sequence: {Sequence} ";
 
     public string ToPreviewText() => string.Empty;
 }

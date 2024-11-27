@@ -14,24 +14,30 @@ public class MultiMsgEntity : IMessageEntity
 {
     private static readonly XmlSerializer Serializer = new(typeof(MultiMessage));
 
-    internal string? ResId { get; set; }
+    public string? ResId { get; set; }
 
+    [Obsolete("No more need for group uin")]
     public uint? GroupUin { get; set; }
 
     public List<MessageChain> Chains { get; }
 
+    public string? DetailStr { get; set; }
+
     internal MultiMsgEntity() => Chains = new List<MessageChain>();
 
-    internal MultiMsgEntity(string resId)
+    public MultiMsgEntity(string resId)
     {
         ResId = resId;
         Chains = new List<MessageChain>();
     }
 
-    internal MultiMsgEntity(uint? groupUin, List<MessageChain> chains)
+    [Obsolete("No more need for group uin")]
+    public MultiMsgEntity(uint? groupUin, List<MessageChain> chains, string? detail = null) : this(chains, detail) { }
+
+    public MultiMsgEntity(List<MessageChain> chains, string? detail = null)
     {
-        GroupUin = groupUin;
         Chains = chains;
+        DetailStr = detail;
     }
 
     IEnumerable<Elem> IMessageEntity.PackElement()
@@ -73,19 +79,28 @@ public class MultiMsgEntity : IMessageEntity
             View = "contact"
         };
 
-        if (!Chains.Select(x => x.GetEntity<TextEntity>()).Any())
+        if (!string.IsNullOrEmpty(DetailStr))
         {
-            json.Meta.Detail.News.Add(new News { Text = "[This message is send from Lagrange.Core]" });
+            json.Meta.Detail.News.Add(new News { Text = DetailStr });
         }
         else
         {
-            for (int i = 0; i < count; i++)
+            if (!Chains.Select(x => x.GetEntity<TextEntity>()).Any())
             {
-                var chain = Chains[i];
-                var member = chain.GroupMemberInfo;
-                var friend = chain.FriendInfo;
-                string text = $"{member?.MemberCard ?? member?.MemberName ?? friend?.Nickname}: {chain.ToPreviewText()}";
-                json.Meta.Detail.News.Add(new News { Text = text });
+                json.Meta.Detail.News.Add(new News { Text = "[This message is send from Lagrange.Core]" });
+            }
+            else
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    var chain = Chains[i];
+                    var member = chain.GroupMemberInfo;
+                    var friend = chain.FriendInfo;
+                    // Follow the current TX display, first user name
+                    var displayName = !string.IsNullOrWhiteSpace(friend?.Nickname) ? friend.Nickname : member?.MemberName ?? member?.MemberCard ?? "QQ\u7528\u6237";
+                    string text = $"{displayName}: {chain.ToPreviewText()}";
+                    json.Meta.Detail.News.Add(new News { Text = text });
+                }
             }
         }
 
@@ -103,7 +118,7 @@ public class MultiMsgEntity : IMessageEntity
     {
         if (elem.RichMsg is { ServiceId: 35, Template1: not null } richMsg)
         {
-            var xml = ZCompression.ZDecompress(richMsg.Template1[1..]);
+            var xml = ZCompression.ZDecompress(richMsg.Template1.AsSpan(1));
             if ((MultiMessage?)Serializer.Deserialize(new MemoryStream(xml)) is { } xmlEntity)
             {
                 return new MultiMsgEntity(xmlEntity.ResId);

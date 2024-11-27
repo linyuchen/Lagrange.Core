@@ -9,19 +9,22 @@ internal class SetGroupRequestEvent : ProtocolEvent
     public bool Accept { get; set; }
     
     public uint Type { get; }
+    
+    public string Reason { get; set; } = string.Empty;
 
-    private SetGroupRequestEvent(bool accept, uint groupUin, ulong sequence, uint type) : base(true)
+    private SetGroupRequestEvent(bool accept, uint groupUin, ulong sequence, uint type, string? reason) : base(true)
     {
         Accept = accept;
         GroupUin = groupUin;
         Sequence = sequence;
         Type = type;
+        Reason = reason ?? "";
     }
     
     private SetGroupRequestEvent(int resultCode) : base(resultCode) { }
     
-    public static SetGroupRequestEvent Create(bool accept, uint groupUin, ulong sequence, uint type) 
-        => new(accept, groupUin, sequence, type);
+    public static SetGroupRequestEvent Create(bool accept, uint groupUin, ulong sequence, uint type, string? reason) 
+        => new(accept, groupUin, sequence, type, reason);
     
     public static SetGroupRequestEvent Result(int resultCode) => new(resultCode);
 }

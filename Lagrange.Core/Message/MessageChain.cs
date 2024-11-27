@@ -8,7 +8,7 @@ public sealed class MessageChain : List<IMessageEntity>
 {
     public MessageType Type { get; set; }
 
-    public uint? GroupUin { get; }
+    public uint? GroupUin { get; internal set; }
 
     public uint FriendUin { get; }
 
@@ -22,7 +22,9 @@ public sealed class MessageChain : List<IMessageEntity>
 
     public BotGroupMember? GroupMemberInfo { get; internal set; }
 
-    public uint Sequence { get; internal set; }
+    public uint Sequence { get; } // for C2C message, it's the sequence of the message, for group message, it's the sequence of the group message
+
+    public uint ClientSequence { get; } // only for C2C message
 
     #region Internal Properties
 
@@ -30,23 +32,23 @@ public sealed class MessageChain : List<IMessageEntity>
 
     internal string? Uid { get; set; }
 
-    internal bool IsGroup { get; set; }
+    internal bool IsGroup { get => GroupUin != null; }
 
     internal List<Elem> Elements { get; set; }
 
     #endregion
 
-    internal MessageChain(uint friendUin, string selfUid, string friendUid, uint targetUin = 0, uint sequence = 0, ulong? messageId = null,
+    internal MessageChain(uint friendUin, string selfUid, string friendUid, uint targetUin = 0, uint sequence = 0, uint clientSequence = 0, ulong? messageId = null,
         MessageType type = MessageType.Friend)
     {
         GroupUin = null;
         FriendUin = friendUin;
         TargetUin = targetUin;
         Sequence = sequence; // unuseful at there
+        ClientSequence = clientSequence == 0 ? (uint)Random.Shared.Next(100000000, int.MaxValue) : clientSequence;
         SelfUid = selfUid;
         Uid = friendUid;
-        MessageId = messageId ?? (0x10000000ul << 32) | (uint)Random.Shared.Next(100000000, int.MaxValue);
-        IsGroup = false;
+        MessageId = messageId ?? (0x01000000ul << 32) | (uint)Random.Shared.Next(100000000, int.MaxValue);
         Elements = new List<Elem>();
         Type = type;
     }
@@ -55,9 +57,9 @@ public sealed class MessageChain : List<IMessageEntity>
     {
         GroupUin = groupUin;
         Sequence = 0; // unuseful at there
-        MessageId = (0x10000000ul << 32) | (uint)Random.Shared.Next(100000000, int.MaxValue);
+        ClientSequence = 0;
+        MessageId = (0x01000000ul << 32) | (uint)Random.Shared.Next(100000000, int.MaxValue);
         Uid = null;
-        IsGroup = true;
         Elements = new List<Elem>();
     }
 
@@ -65,10 +67,10 @@ public sealed class MessageChain : List<IMessageEntity>
     {
         GroupUin = groupUin;
         FriendUin = friendUin;
+        ClientSequence = 0;
         Sequence = sequence;
         Uid = null;
         MessageId = messageId;
-        IsGroup = true;
         Elements = new List<Elem>();
     }
 

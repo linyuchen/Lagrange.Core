@@ -4,7 +4,6 @@ using Lagrange.Core.Internal.Event.Action;
 using Lagrange.Core.Internal.Packets.Service.Oidb;
 using Lagrange.Core.Internal.Packets.Service.Oidb.Request;
 using Lagrange.Core.Internal.Packets.Service.Oidb.Response;
-using Lagrange.Core.Utility.Binary;
 using ProtoBuf.Meta;
 
 namespace Lagrange.Core.Internal.Service.Action;
@@ -17,8 +16,8 @@ internal class GroupMuteGlobalService : BaseService<GroupMuteGlobalEvent>
 
     static GroupMuteGlobalService() => Serializer.UseImplicitZeroDefaults = false; // 666
 
-    protected override bool Build(GroupMuteGlobalEvent input, BotKeystore keystore, BotAppInfo appInfo, BotDeviceInfo device, 
-        out BinaryPacket output, out List<BinaryPacket>? extraPackets)
+    protected override bool Build(GroupMuteGlobalEvent input, BotKeystore keystore, BotAppInfo appInfo,
+        BotDeviceInfo device, out Span<byte> output, out List<Memory<byte>>? extraPackets)
     {
         var packet = new OidbSvcTrpcTcpBase<OidbSvcTrpcTcp0x89A_0>(new OidbSvcTrpcTcp0x89A_0
         {
@@ -28,7 +27,7 @@ internal class GroupMuteGlobalService : BaseService<GroupMuteGlobalEvent>
 
         using var stream = new MemoryStream();
         Serializer.Serialize(stream, packet);
-        output = new BinaryPacket(stream);
+        output = stream.ToArray();
         
         extraPackets = null;
         return true;

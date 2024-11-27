@@ -5,7 +5,6 @@ using Lagrange.Core.Internal.Event.Action;
 using Lagrange.Core.Internal.Packets.Service.Oidb;
 using Lagrange.Core.Internal.Packets.Service.Oidb.Request;
 using Lagrange.Core.Internal.Packets.Service.Oidb.Response;
-using Lagrange.Core.Utility.Binary;
 using Lagrange.Core.Utility.Extension;
 using ProtoBuf;
 
@@ -17,8 +16,8 @@ namespace Lagrange.Core.Internal.Service.Action;
 [Service("OidbSvcTrpcTcp.0x6d8_1")]
 internal class GroupFSViewService : BaseService<GroupFSViewEvent>
 {
-    protected override bool Build(GroupFSViewEvent input, BotKeystore keystore, BotAppInfo appInfo, BotDeviceInfo device,
-        out BinaryPacket output, out List<BinaryPacket>? extraPackets)
+    protected override bool Build(GroupFSViewEvent input, BotKeystore keystore, BotAppInfo appInfo,
+        BotDeviceInfo device, out Span<byte> output, out List<Memory<byte>>? extraPackets)
     {
         object packet = input switch
         {
@@ -62,7 +61,7 @@ internal class GroupFSViewService : BaseService<GroupFSViewEvent>
 
         extraEvents = null;
 
-        if (packet.Body.List != null)
+        if (packet.Body.List is { RetCode: 0 })
         {
             var items = packet.Body.List.Items ?? new List<OidbSvcTrpcTcp0x6D8_1ResponseItem>();
             var fileEntries = items.Select(x =>
@@ -84,7 +83,7 @@ internal class GroupFSViewService : BaseService<GroupFSViewEvent>
 
                 return entry;
             }).ToList();
-            output = GroupFSListEvent.Result((int)packet.ErrorCode, fileEntries);
+            output = GroupFSListEvent.Result((int)packet.ErrorCode, fileEntries, packet.Body.List.IsEnd);
             return true;
         }
 

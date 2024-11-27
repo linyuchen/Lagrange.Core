@@ -13,30 +13,30 @@ public class BotContext : IDisposable
     public string? BotName => ContextCollection.Keystore.Info?.Name;
 
     internal readonly Utility.TaskScheduler Scheduler;
-    
+
     internal readonly ContextCollection ContextCollection;
 
-    private readonly BotAppInfo _appInfo;
-    
-    private readonly BotConfig _config;
-    
+    public BotAppInfo AppInfo { get; }
+
+    public BotConfig Config { get; }
+
     private readonly BotDeviceInfo _deviceInfo;
-    
+
     private readonly BotKeystore _keystore;
-    
-    internal BotContext(BotConfig config, BotDeviceInfo deviceInfo, BotKeystore keystore)
+
+    internal BotContext(BotConfig config, BotDeviceInfo deviceInfo, BotKeystore keystore, BotAppInfo appInfo)
     {
         Invoker = new EventInvoker(this);
         Scheduler = new Utility.TaskScheduler();
-        
-        _config = config;
-        _appInfo = BotAppInfo.ProtocolToAppInfo[config.Protocol];
+
+        Config = config;
+        AppInfo = appInfo;
         _deviceInfo = deviceInfo;
         _keystore = keystore;
-        
-        ContextCollection = new ContextCollection(_keystore, _appInfo, _deviceInfo, _config, Invoker, Scheduler);
+
+        ContextCollection = new ContextCollection(_keystore, AppInfo, _deviceInfo, Config, Invoker, Scheduler);
     }
-    
+
     public void Dispose()
     {
         ContextCollection.Dispose();
